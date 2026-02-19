@@ -1,0 +1,17 @@
+STEAM CUSTOM ARTWORK - SUDOKU
+=============================
+
+These images are sized for Steam's library. After adding Sudoku.exe to Steam:
+
+1. Right-click the game in your Steam library
+2. Hover over "Manage" → click "Set custom artwork"
+3. Browse to this folder and select each image:
+
+   steam_grid.png   → Grid (main library view)     920×430
+   steam_hero.png   → Hero (game page background)  1920×620
+   steam_logo.png   → Logo (game page header)      1280×720
+   steam_poster.png → Poster (vertical capsule)    600×900
+
+4. Click "Set" for each one
+
+The images will be saved by Steam. You can close this folder afterward.

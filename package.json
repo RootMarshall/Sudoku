@@ -21,11 +21,12 @@
       "dist/**/*",
       "electron/**/*"
     ],
+    "extraFiles": [
+      { "from": "steam_assets", "to": "SteamAssets" }
+    ],
     "win": {
-      "target": "portable"
-    },
-    "portable": {
-      "artifactName": "Sudoku-Portable.exe"
+      "target": "dir",
+      "signAndEditExecutable": false
     }
   },
   "dependencies": {

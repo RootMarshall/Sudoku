@@ -22,15 +22,16 @@ npm run electron:dev
 npm install
 npm run electron:build:win
 ```
-The portable executable will be in `release/Sudoku-Portable.exe`.
+The executable will be in `release/win-unpacked/Sudoku.exe`.
 
 ## Adding to Steam
 
 1. Build the game: `npm run electron:build:win`
 2. Open Steam → **Games** → **Add a Non-Steam Game to My Library**
-3. Click **Browse** and navigate to `release/Sudoku-Portable.exe`
+3. Click **Browse** and navigate to `release/win-unpacked/Sudoku.exe`
 4. Select it and click **Add Selected Programs**
-5. Right‑click the game in your library → **Properties** to set a custom name or artwork
+5. Right‑click the game → **Manage** → **Set custom artwork**
+6. Browse to `release/win-unpacked/SteamAssets/` and add the included images (grid, hero, logo, poster)
 
 ## Controls
 
