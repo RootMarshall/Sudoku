@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "electron:build": "vite build && electron-builder",
-    "electron:build:win": "vite build && electron-builder --win"
+    "electron:build:win": "vite build && electron-builder --win",
+    "dist:zip": "powershell -Command \"Compress-Archive -Path 'release/win-unpacked' -DestinationPath 'release/Sudoku-Windows.zip' -Force\""
   },
   "build": {
     "appId": "com.sudoku.game",

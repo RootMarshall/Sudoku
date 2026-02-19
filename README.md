@@ -24,6 +24,15 @@ npm run electron:build:win
 ```
 The executable will be in `release/win-unpacked/Sudoku.exe`.
 
+### Sharing with others
+
+**Do not send only the .exe** — it needs ffmpeg.dll and other files in the same folder. Instead:
+
+1. Build: `npm run electron:build:win`
+2. **Close the Sudoku app** if it's running (files must be unlocked)
+3. Create a zip: `npm run dist:zip` (creates `release/Sudoku-Windows.zip`)
+3. Share the zip. Recipients unzip it, open the `win-unpacked` folder, and run `Sudoku.exe` from inside.
+
 ## Adding to Steam
 
 1. Build the game: `npm run electron:build:win`
