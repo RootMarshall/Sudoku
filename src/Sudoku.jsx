@@ -23,15 +23,48 @@ function solve(g){
   return true;
 }
 
+function countSolutions(g,limit){
+  let count=0;
+  function rec(){
+    for(let r=0;r<9;r++)for(let c=0;c<9;c++){
+      if(g[r][c]===0){
+        for(let n=1;n<=9;n++){
+          if(isValid(g,r,c,n)){
+            g[r][c]=n;
+            rec();
+            g[r][c]=0;
+            if(count>=limit)return;
+          }
+        }
+        return;
+      }
+    }
+    count++;
+  }
+  rec();
+  return count;
+}
+
 function generatePuzzle(difficulty){
   const solution=emptyGrid();
   solve(solution);
-  const clues={easy:45,medium:35,hard:25}[difficulty]||35;
+  const targetClues={easy:45,medium:35,hard:25}[difficulty]||35;
   const puzzle=solution.map(r=>[...r]);
-  let removed=81-clues;
-  while(removed>0){
-    const r=Math.floor(Math.random()*9),c=Math.floor(Math.random()*9);
-    if(puzzle[r][c]!==0){puzzle[r][c]=0;removed--;}
+
+  const cells=[];
+  for(let r=0;r<9;r++)for(let c=0;c<9;c++)cells.push([r,c]);
+  cells.sort(()=>Math.random()-0.5);
+
+  let clues=81;
+  for(const [r,c] of cells){
+    if(clues<=targetClues)break;
+    const saved=puzzle[r][c];
+    puzzle[r][c]=0;
+    if(countSolutions(puzzle,2)!==1){
+      puzzle[r][c]=saved;
+    } else {
+      clues--;
+    }
   }
   return {puzzle,solution};
 }
