@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { playCorrect, playWrong, playVictory } from "./sounds";
 
 // ── Sudoku generation ──────────────────────────────────────────────────────────
 function emptyGrid() { return Array.from({length:9},()=>Array(9).fill(0)); }
@@ -85,6 +86,7 @@ export default function Sudoku(){
   const [lives,setLives]=useState(5);
   const [time,setTime]=useState(0);
   const [errors,setErrors]=useState(null); // Set of "r,c"
+  const [lastGuess,setLastGuess]=useState(null); // { r, c, correct } for animation
   const timerRef=useRef(null);
 
   const startTimer=useCallback(()=>{
@@ -111,6 +113,7 @@ export default function Sudoku(){
     setTime(0);
     setSelected(null);
     setNoteMode(false);
+    setLastGuess(null);
     setScreen("game");
     startTimer();
   }
@@ -147,6 +150,9 @@ export default function Sudoku(){
       return next;
     });
     if(!correct){
+      playWrong();
+      setLastGuess({r,c,correct:false});
+      setTimeout(()=>setLastGuess(null),400);
       const newErrors=new Set(errors);
       newErrors.add(`${r},${c}`);
       setErrors(newErrors);
@@ -154,10 +160,13 @@ export default function Sudoku(){
       setLives(newLives);
       if(newLives<=0){stopTimer();setScreen("over");return;}
     } else {
+      playCorrect();
+      setLastGuess({r,c,correct:true});
+      setTimeout(()=>setLastGuess(null),350);
       setErrors(prev=>{const s=new Set(prev);s.delete(`${r},${c}`);return s;});
       // check win
       const allFilled=newBoard.every((row,ri)=>row.every((v,ci)=>v===solution[ri][ci]));
-      if(allFilled){stopTimer();setScreen("win");}
+      if(allFilled){stopTimer();playVictory();setScreen("win");}
     }
   }
 
@@ -181,13 +190,13 @@ export default function Sudoku(){
       if(screen!=="game")return;
       if(e.key>='1'&&e.key<='9')handleNum(parseInt(e.key));
       if(e.key==='Backspace'||e.key==='Delete')handleErase();
-      if(e.key==='n'||e.key==='N')setNoteMode(m=>!m);
+      if(e.key===' '||e.key==='n'||e.key==='N'){e.preventDefault();setNoteMode(m=>!m);}
       if(!selected)return;
       const [r,c]=selected;
-      if(e.key==='ArrowUp'&&r>0)setSelected([r-1,c]);
-      if(e.key==='ArrowDown'&&r<8)setSelected([r+1,c]);
-      if(e.key==='ArrowLeft'&&c>0)setSelected([r,c-1]);
-      if(e.key==='ArrowRight'&&c<8)setSelected([r,c+1]);
+      if((e.key==='ArrowUp'||e.key==='w'||e.key==='W')&&r>0){e.preventDefault();setSelected([r-1,c]);}
+      if((e.key==='ArrowDown'||e.key==='s'||e.key==='S')&&r<8){e.preventDefault();setSelected([r+1,c]);}
+      if((e.key==='ArrowLeft'||e.key==='a'||e.key==='A')&&c>0){e.preventDefault();setSelected([r,c-1]);}
+      if((e.key==='ArrowRight'||e.key==='d'||e.key==='D')&&c<8){e.preventDefault();setSelected([r,c+1]);}
     }
     window.addEventListener('keydown',onKey);
     return()=>window.removeEventListener('keydown',onKey);
@@ -268,21 +277,94 @@ export default function Sudoku(){
 
         <div style={{marginTop:48,color:palette.sub,fontSize:14,lineHeight:1.8}}>
           <div>Click a cell → tap a number to fill</div>
-          <div>Press <kbd style={{background:palette.card,padding:'1px 6px',borderRadius:3,color:palette.text}}>N</kbd> to toggle note mode</div>
-          <div>Arrow keys to navigate</div>
+          <div>Press <kbd style={{background:palette.card,padding:'1px 6px',borderRadius:3,color:palette.text}}>Space</kbd> or <kbd style={{background:palette.card,padding:'1px 6px',borderRadius:3,color:palette.text}}>N</kbd> to toggle note mode</div>
+          <div><kbd style={{background:palette.card,padding:'1px 6px',borderRadius:3,color:palette.text}}>↑↓←→</kbd> or <kbd style={{background:palette.card,padding:'1px 6px',borderRadius:3,color:palette.text}}>WASD</kbd> to navigate</div>
         </div>
       </div>
     </div>
   );
 
   if(screen==="over"||screen==="win") return (
-    <div style={{minHeight:'100vh',background:palette.bg,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',fontFamily:"'Crimson Pro',Georgia,serif",color:palette.text}}>
-      <div style={{textAlign:'center'}}>
-        <div style={{fontSize:80,marginBottom:16}}>{screen==="win"?"✨":"💀"}</div>
-        <div style={{fontSize:48,fontFamily:"'Playfair Display',serif",fontWeight:900,color:screen==="win"?palette.accent:palette.error}}>
-          {screen==="win"?"SOLVED!":"GAME OVER"}
-        </div>
-        <div style={{color:palette.sub,fontSize:18,marginTop:8}}>Time: {fmt(time)}</div>
+    <div style={{minHeight:'100vh',background:palette.bg,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',fontFamily:"'Crimson Pro',Georgia,serif",color:palette.text,position:'relative',overflow:'hidden'}}>
+      <style>{`
+        @keyframes firework-burst {
+          0% { transform: translate(0,0) scale(0); opacity: 1; }
+          100% { transform: var(--tx) scale(1); opacity: 0; }
+        }
+        @keyframes banner-slide {
+          0% { transform: scale(0.3); opacity: 0; }
+          50% { transform: scale(1.08); opacity: 1; }
+          70% { transform: scale(0.95); }
+          100% { transform: scale(1); opacity: 1; }
+        }
+        @keyframes over-fade {
+          0% { opacity: 0; }
+          100% { opacity: 0.4; }
+        }
+        .fw-particle { animation: firework-burst 1.2s ease-out forwards; }
+        .fw-banner, .over-banner { animation: banner-slide 0.6s cubic-bezier(0.34,1.56,0.64,1) forwards; }
+        .over-vignette { animation: over-fade 0.8s ease-out forwards; }
+      `}</style>
+      {screen==="win"&&(
+        <>
+          <div style={{position:'absolute',inset:0,pointerEvents:'none',overflow:'hidden'}}>
+            {[
+              {x:20,y:25,c:'#e8c547'},
+              {x:80,y:20,c:'#ff9f43'},
+              {x:50,y:15,c:'#e8c547'},
+              {x:15,y:70,c:'#ff6b6b'},
+              {x:85,y:75,c:'#e8c547'},
+              {x:50,y:85,c:'#ff9f43'},
+              {x:75,y:45,c:'#fffffe'},
+              {x:25,y:55,c:'#ff9f43'},
+            ].map((f,i)=>(
+              <div key={i} style={{position:'absolute',left:`${f.x}%`,top:`${f.y}%`,width:4,height:4}}>
+                {[...Array(16)].map((_,j)=>{
+                  const rad=(j*22.5)*Math.PI/180;
+                  const tx=`translate(${Math.cos(rad)*100}px, ${Math.sin(rad)*100}px)`;
+                  return (
+                    <div key={j} className="fw-particle" style={{
+                      position:'absolute',left:'-3px',top:'-3px',width:6,height:6,borderRadius:'50%',background:f.c,
+                      boxShadow:`0 0 8px ${f.c}`,
+                      '--tx':tx,animationDelay:`${i*0.15}s`,
+                    }}/>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+          <div className="fw-banner" style={{
+            position:'relative',zIndex:1,
+            padding:'20px 56px',marginBottom:24,
+            background:`linear-gradient(135deg, ${palette.accent} 0%, #d4a83a 50%, ${palette.accent} 100%)`,
+            boxShadow:'0 8px 32px rgba(232,197,71,0.4), inset 0 1px 0 rgba(255,255,255,0.3)',
+            borderRadius:4,border:'2px solid rgba(255,255,255,0.25)',
+            transformOrigin:'center',
+          }}>
+            <div style={{fontSize:42,fontFamily:"'Playfair Display',serif",fontWeight:900,color:palette.bg,letterSpacing:4,textShadow:'0 2px 4px rgba(0,0,0,0.2)'}}>SOLVED!</div>
+          </div>
+        </>
+      )}
+      {screen==="over"&&(
+        <>
+          <div className="over-vignette" style={{
+            position:'absolute',inset:0,pointerEvents:'none',
+            background:'radial-gradient(ellipse at center, transparent 40%, rgba(255,107,107,0.15) 100%)',
+          }}/>
+          <div className="over-banner" style={{
+            position:'relative',zIndex:1,
+            padding:'20px 48px',marginBottom:24,
+            background:`linear-gradient(135deg, #c0392b 0%, #8b1a1a 50%, #5c0a0a 100%)`,
+            boxShadow:'0 8px 32px rgba(192,57,43,0.35), inset 0 1px 0 rgba(255,255,255,0.1)',
+            borderRadius:4,border:'2px solid rgba(255,255,255,0.15)',
+            transformOrigin:'center',
+          }}>
+            <div style={{fontSize:42,fontFamily:"'Playfair Display',serif",fontWeight:900,color:'#fffffe',letterSpacing:4,textShadow:'0 2px 8px rgba(0,0,0,0.5)'}}>GAME OVER</div>
+          </div>
+        </>
+      )}
+      <div style={{textAlign:'center',position:'relative',zIndex:1}}>
+        <div style={{color:palette.sub,fontSize:18,marginTop:0}}>Time: {fmt(time)}</div>
         <div style={{display:'flex',gap:12,marginTop:40,justifyContent:'center'}}>
           <button onClick={startGame} style={{padding:'14px 40px',borderRadius:4,border:`2px solid ${palette.accent}`,background:palette.accent,color:palette.bg,cursor:'pointer',fontFamily:"'Playfair Display',serif",fontSize:18,fontWeight:700}}>Play Again</button>
           <button onClick={()=>{stopTimer();setScreen("menu");}} style={{padding:'14px 40px',borderRadius:4,border:`2px solid ${palette.border}`,background:'transparent',color:palette.sub,cursor:'pointer',fontFamily:"'Playfair Display',serif",fontSize:18,fontWeight:700}}>Menu</button>
@@ -296,6 +378,21 @@ export default function Sudoku(){
     <div style={{minHeight:'100vh',background:palette.bg,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',fontFamily:"'Crimson Pro',Georgia,serif",color:palette.text,padding:'20px 0'}}>
       <style>{`
         .num-btn:hover{background:rgba(232,197,71,0.2)!important;}
+        @keyframes cell-shake {
+          0%,100% { transform: translateX(0); }
+          20% { transform: translateX(-6px); }
+          40% { transform: translateX(6px); }
+          60% { transform: translateX(-4px); }
+          80% { transform: translateX(4px); }
+        }
+        @keyframes cell-lock {
+          0% { transform: scale(1); }
+          30% { transform: scale(0.88); }
+          55% { transform: scale(1.06); }
+          100% { transform: scale(1); }
+        }
+        .cell-shake { animation: cell-shake 0.4s ease-out; }
+        .cell-lock { animation: cell-lock 0.35s cubic-bezier(0.34,1.56,0.64,1); }
       `}</style>
 
       {/* Header */}
@@ -316,8 +413,9 @@ export default function Sudoku(){
       <div style={{display:'grid',gridTemplateColumns:'repeat(9,52px)',borderRadius:6,overflow:'hidden',boxShadow:'0 8px 48px rgba(0,0,0,0.6)'}}>
         {board&&board.map((row,r)=>row.map((val,c)=>{
           const noteSet=notes[r][c];
+          const anim=lastGuess&&lastGuess.r===r&&lastGuess.c===c?(lastGuess.correct?'cell-lock':'cell-shake'):'';
           return(
-            <div key={`${r},${c}`} style={cellStyle(r,c)} onClick={()=>handleCellClick(r,c)}>
+            <div key={`${r},${c}`} className={anim} style={{...cellStyle(r,c),transformOrigin:'center'}} onClick={()=>handleCellClick(r,c)}>
               {val!==0?(
                 <span>{val}</span>
               ):(
