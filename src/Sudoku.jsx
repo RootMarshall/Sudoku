@@ -75,6 +75,8 @@ const HEARTS = ["♥","♥","♥","♥","♥"];
 
 export default function Sudoku(){
   const [screen,setScreen]=useState("menu"); // menu | game | over | win
+  const [paused,setPaused]=useState(false);
+  const [reviewFrom,setReviewFrom]=useState(null); // null | 'over' | 'win'
   const [difficulty,setDifficulty]=useState("medium");
   const [puzzle,setPuzzle]=useState(null);
   const [solution,setSolution]=useState(null);
@@ -114,6 +116,8 @@ export default function Sudoku(){
     setSelected(null);
     setNoteMode(false);
     setLastGuess(null);
+    setPaused(false);
+    setReviewFrom(null);
     setScreen("game");
     startTimer();
   }
@@ -188,6 +192,8 @@ export default function Sudoku(){
   useEffect(()=>{
     function onKey(e){
       if(screen!=="game")return;
+      if(paused){ if(e.key==='Escape'){ e.preventDefault(); setPaused(false); startTimer(); } return; }
+      if(e.key==='Escape'){ e.preventDefault(); setPaused(true); stopTimer(); return; }
       if(e.key>='1'&&e.key<='9')handleNum(parseInt(e.key));
       if(e.key==='Backspace'||e.key==='Delete')handleErase();
       if(e.key===' '||e.key==='n'||e.key==='N'){e.preventDefault();setNoteMode(m=>!m);}
@@ -364,11 +370,40 @@ export default function Sudoku(){
         </>
       )}
       <div style={{textAlign:'center',position:'relative',zIndex:1}}>
-        <div style={{color:palette.sub,fontSize:18,marginTop:0}}>Time: {fmt(time)}</div>
-        <div style={{display:'flex',gap:12,marginTop:40,justifyContent:'center'}}>
-          <button onClick={startGame} style={{padding:'14px 40px',borderRadius:4,border:`2px solid ${palette.accent}`,background:palette.accent,color:palette.bg,cursor:'pointer',fontFamily:"'Playfair Display',serif",fontSize:18,fontWeight:700}}>Play Again</button>
-          <button onClick={()=>{stopTimer();setScreen("menu");}} style={{padding:'14px 40px',borderRadius:4,border:`2px solid ${palette.border}`,background:'transparent',color:palette.sub,cursor:'pointer',fontFamily:"'Playfair Display',serif",fontSize:18,fontWeight:700}}>Menu</button>
-        </div>
+        {!reviewFrom?(
+          <>
+            <div style={{color:palette.sub,fontSize:18,marginTop:0}}>Time: {fmt(time)}</div>
+            <div style={{display:'flex',flexWrap:'wrap',gap:12,marginTop:40,justifyContent:'center'}}>
+              <button onClick={startGame} style={{padding:'14px 40px',borderRadius:4,border:`2px solid ${palette.accent}`,background:palette.accent,color:palette.bg,cursor:'pointer',fontFamily:"'Playfair Display',serif",fontSize:18,fontWeight:700}}>Play Again</button>
+              <button onClick={()=>setReviewFrom(screen)} style={{padding:'14px 40px',borderRadius:4,border:`2px solid ${palette.border}`,background:'transparent',color:palette.sub,cursor:'pointer',fontFamily:"'Playfair Display',serif",fontSize:18,fontWeight:700}}>Review Board</button>
+              <button onClick={()=>{stopTimer();setScreen("menu");setReviewFrom(null);}} style={{padding:'14px 40px',borderRadius:4,border:`2px solid ${palette.border}`,background:'transparent',color:palette.sub,cursor:'pointer',fontFamily:"'Playfair Display',serif",fontSize:18,fontWeight:700}}>Menu</button>
+            </div>
+          </>
+        ):(
+          <div style={{marginTop:24}}>
+            <div style={{color:palette.sub,fontSize:16,marginBottom:16}}>Time: {fmt(time)}</div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(9,52px)',borderRadius:6,overflow:'hidden',boxShadow:'0 8px 48px rgba(0,0,0,0.6)',margin:'0 auto 20px'}}>
+              {board&&board.map((row,r)=>row.map((val,c)=>{
+                const isErr=errors&&errors.has(`${r},${c}`);
+                return(
+                  <div key={`${r},${c}`} style={{
+                    width:52,height:52,display:'flex',alignItems:'center',justifyContent:'center',
+                    borderRight:((c+1)%3===0&&c!==8)?`2px solid ${palette.boxBorder}`:`1px solid ${palette.border}`,
+                    borderBottom:((r+1)%3===0&&r!==8)?`2px solid ${palette.boxBorder}`:`1px solid ${palette.border}`,
+                    borderLeft:c===0?`2px solid ${palette.boxBorder}`:'none',
+                    borderTop:r===0?`2px solid ${palette.boxBorder}`:'none',
+                    fontSize:22,fontWeight:given&&given[r][c]?700:500,
+                    color:isErr?palette.error:given&&given[r][c]?palette.given:palette.user,
+                    fontFamily:"'Crimson Pro', Georgia, serif",background:palette.card,
+                  }}>
+                    {val!==0?<span>{val}</span>:<span style={{color:palette.notecol}}>·</span>}
+                  </div>
+                );
+              }))}
+            </div>
+            <button onClick={()=>setReviewFrom(null)} style={{padding:'12px 32px',borderRadius:4,border:`1px solid ${palette.border}`,background:'transparent',color:palette.sub,cursor:'pointer',fontFamily:"'Crimson Pro',serif",fontSize:16}}>Back</button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -406,8 +441,33 @@ export default function Sudoku(){
           <div style={{fontSize:11,letterSpacing:3,color:palette.sub,textTransform:'uppercase'}}>{difficulty}</div>
           <div style={{fontFamily:"'Playfair Display',serif",fontWeight:700,fontSize:22,color:palette.accent}}>{fmt(time)}</div>
         </div>
-        <button onClick={()=>{stopTimer();setScreen("menu");}} style={{background:'transparent',border:`1px solid ${palette.border}`,color:palette.sub,padding:'6px 14px',borderRadius:4,cursor:'pointer',fontFamily:"'Crimson Pro',serif",fontSize:14}}>Menu</button>
+        <button onClick={()=>{setPaused(true);stopTimer();}} style={{background:'transparent',border:`1px solid ${palette.border}`,color:palette.sub,padding:'6px 14px',borderRadius:4,cursor:'pointer',fontFamily:"'Crimson Pro',serif",fontSize:14}} title="Pause">⏸ Pause</button>
       </div>
+
+      {/* Pause overlay */}
+      {paused&&(
+        <div style={{
+          position:'fixed',inset:0,background:'rgba(15,14,23,0.85)',display:'flex',alignItems:'center',justifyContent:'center',
+          zIndex:100,fontFamily:"'Crimson Pro',Georgia,serif",
+        }}>
+          <div style={{
+            background:palette.card,borderRadius:8,border:`1px solid ${palette.border}`,
+            padding:32,minWidth:260,textAlign:'center',boxShadow:'0 16px 48px rgba(0,0,0,0.5)',
+          }}>
+            <div style={{fontSize:24,fontWeight:700,color:palette.accent,marginBottom:24,fontFamily:"'Playfair Display',serif"}}>Paused</div>
+            <div style={{display:'flex',flexDirection:'column',gap:12}}>
+              <button onClick={()=>{setPaused(false);startTimer();}} style={{
+                padding:'12px 28px',borderRadius:4,border:`2px solid ${palette.accent}`,background:palette.accent,color:palette.bg,
+                cursor:'pointer',fontFamily:"'Crimson Pro',serif",fontSize:16,fontWeight:600,
+              }}>Resume</button>
+              <button onClick={()=>{stopTimer();setPaused(false);setScreen("menu");}} style={{
+                padding:'12px 28px',borderRadius:4,border:`1px solid ${palette.border}`,background:'transparent',color:palette.sub,
+                cursor:'pointer',fontFamily:"'Crimson Pro',serif",fontSize:14,
+              }}>Menu</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Board */}
       <div style={{display:'grid',gridTemplateColumns:'repeat(9,52px)',borderRadius:6,overflow:'hidden',boxShadow:'0 8px 48px rgba(0,0,0,0.6)'}}>
