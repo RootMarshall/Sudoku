@@ -23,7 +23,10 @@
       "electron/**/*"
     ],
     "extraFiles": [
-      { "from": "steam_assets", "to": "SteamAssets" }
+      {
+        "from": "steam_assets",
+        "to": "SteamAssets"
+      }
     ],
     "win": {
       "target": "dir",
@@ -37,7 +40,7 @@
   "devDependencies": {
     "@vitejs/plugin-react": "^4.2.1",
     "concurrently": "^8.2.2",
-    "electron": "^28.0.0",
+    "electron": "^28.3.3",
     "electron-builder": "^24.9.1",
     "vite": "^5.0.0",
     "wait-on": "^7.2.0"

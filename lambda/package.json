@@ -1,0 +1,10 @@
+{
+  "name": "sudoku-daily-completion",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Lambda handler for Sudoku daily completion storage",
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.0.0",
+    "@aws-sdk/lib-dynamodb": "^3.0.0"
+  }
+}

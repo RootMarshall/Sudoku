@@ -45,9 +45,9 @@ The executable will be in `release/win-unpacked/Sudoku.exe`.
 ## Controls
 
 - **Click** a cell, then press **1–9** to fill
-- **N** — toggle note mode
-- **Arrow keys** — navigate cells
-- **Backspace/Delete** — erase
+- **Space** or **N** — toggle note mode
+- **Arrow keys** or **WASD** — navigate cells
+- **Shift** + arrow/WASD — jump 3 squares
 
 ## Difficulty
 
