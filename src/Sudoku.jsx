@@ -107,6 +107,7 @@ export default function Sudoku(){
   const [notes,setNotes]=useState(null);   // 9x9 array of Set<number>
   const [given,setGiven]=useState(null);   // fixed cells
   const [selected,setSelected]=useState(null);
+  const [highlightedKeys,setHighlightedKeys]=useState([]); // "r,c" strings — drag-paint selection; notes apply to all when in note mode
   const [noteMode,setNoteMode]=useState(false);
   const [lives,setLives]=useState(5);
   const [time,setTime]=useState(0);
@@ -126,6 +127,8 @@ export default function Sudoku(){
   const [dailyClickLoading,setDailyClickLoading]=useState(false);
   const timerRef=useRef(null);
   const [gameScale,setGameScale]=useState(1);
+  const [dropTarget,setDropTarget]=useState(null);
+  const paintSelectRef=useRef(false);
 
   async function refreshLeaderboard() {
     if (!electronAPI || !user) return;
@@ -162,6 +165,7 @@ export default function Sudoku(){
     setLives(5);
     setTime(0);
     setSelected(null);
+    setHighlightedKeys([]);
     setNoteMode(false);
     setLastGuess(null);
     setPaused(false);
@@ -187,6 +191,7 @@ export default function Sudoku(){
     setLives(5);
     setTime(0);
     setSelected(null);
+    setHighlightedKeys([]);
     setNoteMode(false);
     setLastGuess(null);
     setPaused(false);
@@ -206,7 +211,7 @@ export default function Sudoku(){
       notes:notes.map(r=>r.map(s=>[...s])),
       given,lives,time,
       errors:[...errors],
-      selected,noteMode,screen,
+      selected,highlightedCells:highlightedKeys,noteMode,screen,
       isDailyGame:!!isDailyGame,
       ...(isDailyGame&&{dailyDate:getTodayUTC()}),
     };
@@ -233,6 +238,11 @@ export default function Sudoku(){
       setTime(data.time);
       setErrors(new Set(data.errors||[]));
       setSelected(data.selected);
+      setHighlightedKeys(Array.isArray(data.highlightedCells)&&data.highlightedCells.length>0
+        ?data.highlightedCells
+        :data.selected&&Array.isArray(data.selected)
+          ?[`${data.selected[0]},${data.selected[1]}`]
+          :[]);
       setNoteMode(data.noteMode);
       setIsDailyGame(!!data.isDailyGame);
       setScreen(data.screen||"game");
@@ -292,7 +302,7 @@ export default function Sudoku(){
     if((screen==="game"||screen==="over"||screen==="win")&&puzzle&&board&&notes&&given){
       saveGame();
     }
-  },[screen,puzzle,board,notes,given,lives,time,errors,selected,noteMode,isDailyGame]);
+  },[screen,puzzle,board,notes,given,lives,time,errors,selected,highlightedKeys,noteMode,isDailyGame]);
 
   useEffect(()=>{
     if(screen!=='game')return;
@@ -309,15 +319,38 @@ export default function Sudoku(){
     return()=>window.removeEventListener('resize',updateScale);
   },[screen]);
 
-  function handleCellClick(r,c){setSelected([r,c]);}
+  function beginCellPaintFromEvent(r,c,e){
+    if(e.button!==0)return;
+    paintSelectRef.current=true;
+    const k=`${r},${c}`;
+    setHighlightedKeys([k]);
+    setSelected([r,c]);
+  }
+  function extendCellPaint(r,c){
+    if(!paintSelectRef.current)return;
+    const k=`${r},${c}`;
+    setHighlightedKeys(prev=>prev.includes(k)?prev:[...prev,k]);
+    setSelected([r,c]);
+  }
 
-  function handleNum(n){
-    if(!selected||!board||!solution)return;
-    const [r,c]=selected;
-    if(given[r][c])return;
-    // Correct guesses can't be changed
-    if(board[r][c]!==0&&solution[r][c]===board[r][c])return;
+  useEffect(()=>{
+    function endPaint(){paintSelectRef.current=false;}
+    window.addEventListener('mouseup',endPaint);
+    return()=>window.removeEventListener('mouseup',endPaint);
+  },[]);
+
+  function handleNum(n,cellOverride){
+    if(!board||!solution)return;
+
     if(noteMode){
+      const keys=cellOverride!=null
+        ?[`${cellOverride[0]},${cellOverride[1]}`]
+        :highlightedKeys.length>0
+          ?[...highlightedKeys]
+          :selected
+            ?[`${selected[0]},${selected[1]}`]
+            :[];
+      if(keys.length===0)return;
       if(errors&&errors.size>0){
         const newBoard=board.map(row=>[...row]);
         for(const key of errors){ const [er,ec]=key.split(',').map(Number); newBoard[er][ec]=0; }
@@ -326,12 +359,24 @@ export default function Sudoku(){
       }
       setNotes(prev=>{
         const next=prev.map(row=>row.map(s=>new Set(s)));
-        if(next[r][c].has(n))next[r][c].delete(n);
-        else next[r][c].add(n);
+        for(const key of keys){
+          const [r,c]=key.split(',').map(Number);
+          if(given[r][c])continue;
+          if(board[r][c]!==0&&solution[r][c]===board[r][c])continue;
+          if(next[r][c].has(n))next[r][c].delete(n);
+          else next[r][c].add(n);
+        }
         return next;
       });
       return;
     }
+
+    const target=cellOverride??selected;
+    if(!target)return;
+    const [r,c]=target;
+    if(given[r][c])return;
+    // Correct guesses can't be changed
+    if(board[r][c]!==0&&solution[r][c]===board[r][c])return;
     // place guess - clear any previous incorrect guesses when making a new guess anywhere
     const correct=solution[r][c]===n;
     const newBoard=board.map(row=>[...row]);
@@ -406,10 +451,11 @@ export default function Sudoku(){
       if(!selected)return;
       const [r,c]=selected;
       const step=e.shiftKey?3:1;
-      if((e.key==='ArrowUp'||e.key==='w'||e.key==='W')&&r>0){e.preventDefault();setSelected([Math.max(0,r-step),c]);}
-      if((e.key==='ArrowDown'||e.key==='s'||e.key==='S')&&r<8){e.preventDefault();setSelected([Math.min(8,r+step),c]);}
-      if((e.key==='ArrowLeft'||e.key==='a'||e.key==='A')&&c>0){e.preventDefault();setSelected([r,Math.max(0,c-step)]);}
-      if((e.key==='ArrowRight'||e.key==='d'||e.key==='D')&&c<8){e.preventDefault();setSelected([r,Math.min(8,c+step)]);}
+      const moveTo=(nr,nc)=>{setSelected([nr,nc]);setHighlightedKeys([`${nr},${nc}`]);};
+      if((e.key==='ArrowUp'||e.key==='w'||e.key==='W')&&r>0){e.preventDefault();moveTo(Math.max(0,r-step),c);}
+      if((e.key==='ArrowDown'||e.key==='s'||e.key==='S')&&r<8){e.preventDefault();moveTo(Math.min(8,r+step),c);}
+      if((e.key==='ArrowLeft'||e.key==='a'||e.key==='A')&&c>0){e.preventDefault();moveTo(r,Math.max(0,c-step));}
+      if((e.key==='ArrowRight'||e.key==='d'||e.key==='D')&&c<8){e.preventDefault();moveTo(r,Math.min(8,c+step));}
     }
     window.addEventListener('keydown',onKey);
     return()=>window.removeEventListener('keydown',onKey);
@@ -463,16 +509,19 @@ export default function Sudoku(){
   };
 
   const cellStyle=(r,c)=>{
-    const sel=selected&&selected[0]===r&&selected[1]===c;
+    const key=`${r},${c}`;
+    const inHighlight=highlightedKeys.includes(key);
+    const focusSel=selected&&selected[0]===r&&selected[1]===c;
+    const dropHi=dropTarget&&dropTarget[0]===r&&dropTarget[1]===c;
     const related=selected&&(selected[0]===r||selected[1]===c||
       (Math.floor(selected[0]/3)===Math.floor(r/3)&&Math.floor(selected[1]/3)===Math.floor(c/3)));
-    const isErr=errors&&errors.has(`${r},${c}`);
+    const isErr=errors&&errors.has(key);
     const sameVal=selected&&board&&board[selected[0]][selected[1]]!==0&&
-      board[r][c]===board[selected[0]][selected[1]]&&!sel;
+      board[r][c]===board[selected[0]][selected[1]]&&!focusSel;
     return{
       width:52,height:52,display:'flex',alignItems:'center',justifyContent:'center',
       position:'relative',cursor:'pointer',userSelect:'none',
-      background:sel?palette.selected:sameVal?'rgba(232,197,71,0.12)':related?palette.relatedBg:'transparent',
+      background:dropHi?'rgba(232,197,71,0.38)':inHighlight?palette.selected:sameVal?'rgba(232,197,71,0.12)':related?palette.relatedBg:'transparent',
       borderRight:((c+1)%3===0&&c!==8)?`2px solid ${palette.boxBorder}`:`1px solid ${palette.border}`,
       borderBottom:((r+1)%3===0&&r!==8)?`2px solid ${palette.boxBorder}`:`1px solid ${palette.border}`,
       borderLeft:c===0?`2px solid ${palette.boxBorder}`:'none',
@@ -624,7 +673,8 @@ export default function Sudoku(){
         )}
 
         <div style={{marginTop:48,color:palette.sub,fontSize:14,lineHeight:1.8}}>
-          <div>Click a cell → tap a number to fill</div>
+          <div>Click a cell → tap a number to fill, or drag a number onto the grid</div>
+          <div>Click and drag across cells to highlight many; in note mode, a digit toggles that note in every highlighted cell</div>
           <div>Press <kbd style={{background:palette.card,padding:'1px 6px',borderRadius:3,color:palette.text}}>Space</kbd> or <kbd style={{background:palette.card,padding:'1px 6px',borderRadius:3,color:palette.text}}>N</kbd> to toggle note mode</div>
           <div><kbd style={{background:palette.card,padding:'1px 6px',borderRadius:3,color:palette.text}}>↑↓←→</kbd> or <kbd style={{background:palette.card,padding:'1px 6px',borderRadius:3,color:palette.text}}>WASD</kbd> to navigate</div>
           <div><kbd style={{background:palette.card,padding:'1px 6px',borderRadius:3,color:palette.text}}>Shift</kbd> + arrow/WASD to jump 3 squares</div>
@@ -833,6 +883,8 @@ export default function Sudoku(){
       <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'flex-start'}}>
       <style>{`
         .num-btn:hover{background:rgba(232,197,71,0.2)!important;}
+        .num-btn-draggable{cursor:grab;}
+        .num-btn-draggable:active{cursor:grabbing;}
         @keyframes cell-shake {
           0%,100% { transform: translateX(0); }
           20% { transform: translateX(-6px); }
@@ -894,6 +946,17 @@ export default function Sudoku(){
                 padding:'12px 28px',borderRadius:4,border:`1px solid ${palette.border}`,background:'transparent',color:palette.sub,
                 cursor:'pointer',fontFamily:"'Crimson Pro',serif",fontSize:14,
               }}>Menu</button>
+              {electronAPI&&(
+                <button onClick={()=>{
+                  saveGame();
+                  setHasSave(!!localStorage.getItem(SAVE_KEY));
+                  stopTimer();
+                  electronAPI.quit();
+                }} style={{
+                  padding:'12px 28px',borderRadius:4,border:`2px solid ${palette.error}`,background:'rgba(255,107,107,0.14)',color:palette.error,
+                  cursor:'pointer',fontFamily:"'Crimson Pro',serif",fontSize:14,fontWeight:600,
+                }}>Quit game</button>
+              )}
             </div>
           </div>
         </div>
@@ -913,16 +976,61 @@ export default function Sudoku(){
           const noteSet=notes[r][c];
           const anim=lastGuess&&lastGuess.r===r&&lastGuess.c===c?(lastGuess.correct?'cell-lock':'cell-shake'):'';
           return(
-            <div key={`${r},${c}`} className={anim} style={{...cellStyle(r,c),transformOrigin:'center'}} onClick={()=>handleCellClick(r,c)}>
+            <div
+              key={`${r},${c}`}
+              className={anim}
+              style={{...cellStyle(r,c),transformOrigin:'center'}}
+              onMouseDown={e=>beginCellPaintFromEvent(r,c,e)}
+              onMouseEnter={()=>extendCellPaint(r,c)}
+              onDragOver={(e)=>{e.preventDefault();e.dataTransfer.dropEffect='copy';setDropTarget([r,c]);}}
+              onDragLeave={(e)=>{
+                const next=e.relatedTarget;
+                if(next instanceof Node&&e.currentTarget.contains(next))return;
+                setDropTarget(t=>t&&t[0]===r&&t[1]===c?null:t);
+              }}
+              onDrop={(e)=>{
+                e.preventDefault();
+                setDropTarget(null);
+                const raw=e.dataTransfer.getData('text/plain');
+                const n=parseInt(raw,10);
+                if(n>=1&&n<=9){
+                  const k=`${r},${c}`;
+                  setSelected([r,c]);
+                  setHighlightedKeys([k]);
+                  handleNum(n,[r,c]);
+                }
+              }}
+            >
               {val!==0?(
-                <span>{val}</span>
+                <span style={{pointerEvents:'none'}}>{val}</span>
               ):(
-                <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',width:'100%',height:'100%',padding:2,boxSizing:'border-box'}}>
-                  {[1,2,3,4,5,6,7,8,9].map(n=>(
-                    <span key={n} style={{fontSize:9,color:palette.notecol,textAlign:'center',lineHeight:'14px',fontWeight:600}}>
-                      {noteSet.has(n)?n:''}
-                    </span>
-                  ))}
+                <div style={{position:'relative',width:'100%',height:'100%',padding:2,boxSizing:'border-box',pointerEvents:'none'}}>
+                  {[1,2,3,4,5,6,7,8,9].map(n=>{
+                    const i=n-1;
+                    const col=i%3;
+                    const row=Math.floor(i/3);
+                    return(
+                      <span
+                        key={n}
+                        style={{
+                          position:'absolute',
+                          left:`${col*(100/3)}%`,
+                          top:`${row*(100/3)}%`,
+                          width:`${100/3}%`,
+                          height:`${100/3}%`,
+                          display:'flex',
+                          alignItems:'center',
+                          justifyContent:'center',
+                          fontSize:9,
+                          color:palette.notecol,
+                          fontWeight:600,
+                          lineHeight:1,
+                        }}
+                      >
+                        {noteSet.has(n)?n:''}
+                      </span>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -936,9 +1044,21 @@ export default function Sudoku(){
         {/* Number pad */}
         <div style={{display:'flex',gap:8}}>
           {[1,2,3,4,5,6,7,8,9].map(n=>(
-            <button key={n} className="num-btn" onClick={()=>handleNum(n)} style={{
+            <button
+              key={n}
+              type="button"
+              draggable
+              className="num-btn num-btn-draggable"
+              title="Click after selecting a cell, or drag onto the board"
+              onDragStart={(e)=>{
+                e.dataTransfer.setData('text/plain',String(n));
+                e.dataTransfer.effectAllowed='copy';
+              }}
+              onDragEnd={()=>setDropTarget(null)}
+              onClick={()=>handleNum(n)}
+              style={{
               width:44,height:52,borderRadius:4,border:`1px solid ${palette.border}`,
-              background:palette.card,color:palette.text,cursor:'pointer',
+              background:palette.card,color:palette.text,
               fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:700,
               transition:'background 0.15s',
             }}>{n}</button>

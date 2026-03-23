@@ -1,6 +1,6 @@
 # Project Structure: Electron + Vite + React Desktop Game
 
-This document describes the codebase structure for a desktop game built with **Electron**, **Vite**, and **React**. Use it as a template to create a new game with the same setup.
+This document describes the codebase structure for a desktop game built with **Electron**, **Vite**, and **React**, with an **AWS backend** for authentication and daily completion storage.
 
 ---
 
@@ -12,6 +12,9 @@ This document describes the codebase structure for a desktop game built with **E
 | Build tool | Vite 5.x |
 | UI framework | React 18.x |
 | Packaging | electron-builder 24.x |
+| Auth | AWS Cognito (OAuth 2.0 / OIDC) |
+| API | AWS API Gateway (REST) |
+| Backend | AWS Lambda + DynamoDB |
 
 ---
 
@@ -20,12 +23,20 @@ This document describes the codebase structure for a desktop game built with **E
 ```
 project-root/
 ├── electron/
-│   └── main.js              # Electron main process (window, load URL/file)
+│   ├── main.js               # Electron main process (window, IPC handlers)
+│   ├── preload.js            # Context bridge: exposes electronAPI to renderer
+│   ├── auth.js               # Cognito OAuth login, token storage, refresh
+│   ├── api.js                # API client for daily completion endpoints
+│   └── config.js             # AWS config (Cognito, API Gateway base URL)
+├── lambda/
+│   ├── dailyCompletion.mjs   # Lambda handler: PUT/GET daily completions, leaderboard
+│   └── package.json         # Dependencies: @aws-sdk/client-dynamodb, lib-dynamodb
 ├── src/
 │   ├── main.jsx              # React entry point
 │   ├── App.jsx               # Root component (wraps game)
 │   ├── index.css             # Global styles
-│   └── [GameName].jsx        # Main game component (replace with your game)
+│   ├── sounds.js             # Sound effects
+│   └── Sudoku.jsx            # Main game component
 ├── steam_assets/             # Optional: artwork for Steam library
 │   ├── steam_grid.png        # 920×430
 │   ├── steam_hero.png        # 1920×620
@@ -87,6 +98,7 @@ project-root/
 - **`electron:build:win`**: Builds React → `dist/`, then packages with electron-builder → `release/win-unpacked/`.
 - **`win.target: "dir"`**: Produces unpacked folder (avoids code-signing tooling that can fail on Windows).
 - **`extraFiles`**: Copies `steam_assets/` into the built app as `SteamAssets/`.
+- **`files`**: Includes `electron/**/*` (main, preload, auth, api, config).
 
 ### `vite.config.js`
 
@@ -106,51 +118,48 @@ export default defineConfig({
 
 - **`base: './'`**: Required so built assets load correctly when Electron serves from `file://`.
 
+### `lambda/package.json`
+
+Separate package for the Lambda handler. Dependencies: `@aws-sdk/client-dynamodb`, `@aws-sdk/lib-dynamodb`. `"type": "module"` for ES modules. Install and deploy from `lambda/` when updating the backend.
+
 ### `electron/main.js`
 
-```javascript
-const { app, BrowserWindow } = require('electron');
-const path = require('path');
-
-function createWindow() {
-  const win = new BrowserWindow({
-    width: 560,
-    height: 720,
-    minWidth: 480,
-    minHeight: 600,
-    title: 'Your Game',
-    backgroundColor: '#0f0e17',
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-    },
-    show: false,
-  });
-
-  const isDev = !app.isPackaged;
-  if (isDev) {
-    win.loadURL('http://localhost:5173');
-    win.webContents.openDevTools();
-  } else {
-    win.loadFile(path.join(__dirname, '../dist/index.html'));
-  }
-
-  win.once('ready-to-show', () => win.show());
-}
-
-app.whenReady().then(createWindow);
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
-});
-
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) createWindow();
-});
-```
-
+- Creates `BrowserWindow` with `preload.js` for secure IPC.
+- Registers IPC handlers: `auth-login`, `auth-logout`, `auth-get-user`, `daily-save`, `daily-get`, `leaderboard-get`, `app-quit`.
 - **Dev**: Loads from Vite dev server.
 - **Prod**: Loads `dist/index.html` from the built app.
+
+### `electron/preload.js`
+
+Exposes `window.electronAPI` to the renderer (context-isolated):
+
+| Method | Purpose |
+|--------|---------|
+| `login()` | Opens Cognito OAuth window, returns user |
+| `logout()` | Clears stored tokens |
+| `getUser()` | Returns current user or null |
+| `saveDailyCompletion(data)` | PUT completion to API |
+| `getDailyCompletion(date)` | GET user's completion for date |
+| `getLeaderboard(date)` | GET leaderboard for date |
+| `quit()` | Quits the app |
+
+### `electron/auth.js`
+
+- **Cognito OAuth 2.0** with PKCE (code verifier/challenge).
+- Opens a `BrowserWindow` for the authorize flow; intercepts `http://localhost/callback`.
+- Token storage: `cognito-tokens.json` in userData, encrypted via `safeStorage` when available.
+- `getUser()`, `getAccessToken()`, `getIdToken()`, `refreshTokens()`.
+
+### `electron/api.js`
+
+- HTTPS client for API Gateway.
+- Uses `auth.getIdToken()` or `auth.getAccessToken()` for Bearer auth.
+- `saveDailyCompletion(data)`, `getDailyCompletion(date)`, `getLeaderboard(date)`.
+
+### `electron/config.js`
+
+- `cognito`: `region`, `userPoolId`, `clientId`, `domain`.
+- `api`: `baseUrl` (API Gateway REST endpoint).
 
 ### `index.html`
 
@@ -217,15 +226,30 @@ body {
 
 ---
 
+## AWS Backend
+
+### Lambda: `lambda/dailyCompletion.mjs`
+
+- **DynamoDB** table: `SudokuDailyCompletions` (or `TABLE_NAME` env).
+- **Auth**: User ID from `event.requestContext.authorizer.claims.sub` (Cognito authorizer).
+- **PUT**: Store completion (`date`, `difficulty`, `time`, `nickname`, `lives`).
+- **GET** `?date=YYYY-MM-DD`: Return user's completion for that date.
+- **GET** `?date=YYYY-MM-DD&leaderboard=true`: Return sorted leaderboard for that date.
+
+Deploy via API Gateway + Lambda authorizer (Cognito). Configure `electron/config.js` with the API base URL and Cognito client/domain.
+
+---
+
 ## Game Component Pattern
 
 The main game lives in a single React component (e.g. `src/Sudoku.jsx`):
 
-- **State**: `useState` for screens, game data, UI state.
+- **State**: `useState` for screens, game data, UI state, `leaderboard`, `dailyCompleted`, `loginLoading`, `loginError`.
 - **Effects**: `useEffect` for timers, keyboard listeners, cleanup.
 - **Refs**: `useRef` for intervals/timeouts that need cleanup.
 - **Styling**: Inline `style={{}}` objects or a shared palette object.
 - **Screens**: Conditional render by screen state (e.g. `menu`, `game`, `over`, `win`).
+- **Backend**: Uses `window.electronAPI` for login, logout, daily completion save/fetch, leaderboard fetch.
 
 No external UI library; plain React + inline styles.
 
@@ -238,7 +262,7 @@ After `npm run electron:build:win`:
 ```
 release/
 └── win-unpacked/
-    ├── YourGame.exe
+    ├── Sudoku.exe
     ├── ffmpeg.dll
     ├── chrome_100_percent.pak
     ├── ... (other Electron runtime files)
@@ -260,7 +284,7 @@ release/
 | `npm run dev` | Web only: Vite dev server at localhost:5173 |
 | `npm run electron:dev` | Desktop: Vite + Electron, hot reload |
 | `npm run electron:build:win` | Build Windows .exe in `release/win-unpacked/` |
-| `npm run dist:zip` | Create `release/Game-Windows.zip` (close app first) |
+| `npm run dist:zip` | Create `release/Sudoku-Windows.zip` (close app first) |
 
 ---
 
@@ -284,7 +308,7 @@ Thumbs.db
 
 ## Steam Integration (Optional)
 
-1. Add game to Steam as non-Steam game → point to `YourGame.exe`.
+1. Add game to Steam as non-Steam game → point to `Sudoku.exe`.
 2. Right‑click → Manage → Set custom artwork.
 3. Use images from `SteamAssets/` (grid, hero, logo, poster).
 
